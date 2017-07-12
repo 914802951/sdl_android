@@ -434,43 +434,47 @@ public class SdlPipedInputStream extends InputStream {
         if (buffer == null || isClosed) {
             throw new IOException("Pipe is closed");
         }
-
         lastWriter = Thread.currentThread();
-        int bytesToTransfer = byteCount;
-        while (bytesToTransfer > 0) {
+        int offsetToSend = byteOffset;
+        int countToSend = byteCount;
 
-            while (in == out) {
-                if (buffer == null || isClosed) {
-                    throw new IOException("Pipe is closed");
-                }
-
-                notifyAll();
-                try {
+        while (countToSend > 0) {
+            try {
+                while (buffer != null && out == in) {
+                    if (lastReader != null && !lastReader.isAlive()) {
+                        throw new IOException("Pipe broken");
+                    }
+                    notifyAll();
                     wait(1000);
-                } catch (InterruptedException localInterruptedException) {
-                    throw new InterruptedIOException();
                 }
+            } catch (InterruptedException e) {
+                throw new InterruptedIOException();
+            }
+            if (buffer == null) {
+                throw new IOException("Pipe is closed");
+            }
+
+            if (in == -1) {
+                in = 0;
             }
 
             int nextTransferBytes = 0;
-            if (out < in) {
+            if(in < out){
+                nextTransferBytes = out - in;
+            }else if(in >= out){
                 nextTransferBytes = buffer.length - in;
-            } else if (in < out) {
-                if (in == -1) {
-                    in = out = 0;
-                    nextTransferBytes = buffer.length - in;
-                } else {
-                    nextTransferBytes = out - in;
-                }
             }
-            if (nextTransferBytes > bytesToTransfer) {
-                nextTransferBytes = bytesToTransfer;
+
+            if(nextTransferBytes > countToSend){
+                nextTransferBytes = countToSend;
             }
-            System.arraycopy(bytes, byteOffset, buffer, in, nextTransferBytes);
-            bytesToTransfer -= nextTransferBytes;
-            byteOffset += nextTransferBytes;
+
+            System.arraycopy(bytes, offsetToSend, buffer, in,  nextTransferBytes);
             in += nextTransferBytes;
-            if (in >= buffer.length) {
+            offsetToSend += nextTransferBytes;
+            countToSend -= nextTransferBytes;
+
+            if (in == buffer.length) {
                 in = 0;
             }
         }
